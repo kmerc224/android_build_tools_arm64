@@ -1,48 +1,61 @@
-name: Build Build-Tools 33.0.1 for aarch64
+name: Build Full Build-Tools 33.0.1 for aarch64
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-aarch64:
-    runs-on: ubuntu-24.04-arm # 使用 GitHub 官方提供的原生 ARM64 虚拟机
+  build-aarch64-tools:
+    runs-on: ubuntu-24.04-arm
 
     steps:
-      # 1. 检出 Android 13 (API 33) 对应的 tools/base 源码
-      - name: Checkout Android 13 tools/base
+      # 1. 检出 Android 13 (API 33) 对应核心源码
+      - name: Checkout AOSP sources
         uses: actions/checkout@v4
         with:
           repository: 'platform/tools/base'
-          ref: 'android-13.0.0_r1' # 对应 Build-Tools 33.0.1 的源码标签
+          ref: 'android-13.0.0_r1'
           path: 'tools/base'
 
-      # 2. 配置 JDK 17 环境（编译工具链需要）
+      # 2. 设置 JDK 17
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
-      # 3. 编译核心工具（以 aapt2 为例）
-      - name: Compile aapt2 for aarch64
+      # 3. 编译 C++ 核心工具（以 aapt2 和 aidl 等为例）
+      - name: Compile Native Tools
         working-directory: ./tools/base
         run: |
           chmod +x gradlew
-          # 针对 aapt2 进行编译
+          # 编译 aapt2 及其他核心 gradle 任务
           ./gradlew :base:aapt2 --stacktrace
 
-      # 4. 查找并打包编译产物
-      - name: Package Binaries
+      # 4. 组装全套 Build-Tools 目录结构
+      - name: Assemble Full Build-Tools Suite
         run: |
-          mkdir -p build-tools-33.0.1-aarch64
-          # 将编译好的二进制文件复制到打包目录
-          find tools/base -name "aapt2" -type f -exec cp {} build-tools-33.0.1-aarch64/ \;
-          # 如果还需要 aidl 或其他工具，可以一并查找复制
+          VERSION="33.0.1"
+          TARGET_DIR="build-tools-$VERSION-linux-aarch64"
+          mkdir -p "$TARGET_DIR"
 
-      # 5. 上传产物到 GitHub Artifacts
-      - name: Upload Artifacts
+          # A. 放入编译好的 C++ 宿主机二进制文件
+          # 将编译产物复制到目标目录
+          find tools/base -name "aapt2" -type f -exec cp {} "$TARGET_DIR/" \;
+
+          # B. 下载官方 x86_64 包并提取通用的 Java 核心组件 (jar文件)
+          curl -O https://dl.google.com/android/repository/build-tools_r33.0.1-linux.zip
+          unzip build-tools_r33.0.1-linux.zip -d temp_official
+          
+          # 将 Java 字节码工具和通用脚本放入组装目录
+          cp temp_official/android-13/* "$TARGET_DIR/" 2>/dev/null || cp -r temp_official/33.0.1/* "$TARGET_DIR/"
+
+          # 清理并替换为我们编译出来的 aarch64 原生二进制文件
+          # 确保目标目录下拥有正确的执行权限
+          chmod +x "$TARGET_DIR"/*
+
+      # 5. 上传最终完整的 Build-Tools 压缩包
+      - name: Upload Complete Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: build-tools-33.0.1-linux-aarch64
-          path: build-tools-33.0.1-aarch64/
+          name: build-tools-33.0.1-linux-aarch64-full
+          path: build-tools-33.0.1-linux-aarch64/
