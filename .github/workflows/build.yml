@@ -1,0 +1,48 @@
+name: Build Build-Tools 33.0.1 for aarch64
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-aarch64:
+    runs-on: ubuntu-24.04-arm # 使用 GitHub 官方提供的原生 ARM64 虚拟机
+
+    steps:
+      # 1. 检出 Android 13 (API 33) 对应的 tools/base 源码
+      - name: Checkout Android 13 tools/base
+        uses: actions/checkout@v4
+        with:
+          repository: 'platform/tools/base'
+          ref: 'android-13.0.0_r1' # 对应 Build-Tools 33.0.1 的源码标签
+          path: 'tools/base'
+
+      # 2. 配置 JDK 17 环境（编译工具链需要）
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      # 3. 编译核心工具（以 aapt2 为例）
+      - name: Compile aapt2 for aarch64
+        working-directory: ./tools/base
+        run: |
+          chmod +x gradlew
+          # 针对 aapt2 进行编译
+          ./gradlew :base:aapt2 --stacktrace
+
+      # 4. 查找并打包编译产物
+      - name: Package Binaries
+        run: |
+          mkdir -p build-tools-33.0.1-aarch64
+          # 将编译好的二进制文件复制到打包目录
+          find tools/base -name "aapt2" -type f -exec cp {} build-tools-33.0.1-aarch64/ \;
+          # 如果还需要 aidl 或其他工具，可以一并查找复制
+
+      # 5. 上传产物到 GitHub Artifacts
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-tools-33.0.1-linux-aarch64
+          path: build-tools-33.0.1-aarch64/
